@@ -1,0 +1,18 @@
+{
+  "title": "Pixen UniverseNFT Metadata",
+  "type": "object",
+  "properties": {
+      "name": {
+          "type": "string",
+          "description": "Pixel Universe #3"
+      },
+      "description": {
+          "type": "string",
+          "description": "Universe Pixel Art"
+      },
+      "image": {
+          "type": "string",
+          "description": "ipfs://bafybeicv43l3taoqd2gzaf2t2maqy4wnf6tx46ptpiymnjivzihjztxqqq/2.jpg"
+      }
+  }
+}
