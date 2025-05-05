@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity ^0.8.0;
 
-abstract contract Ownable2Steps {
-    error NotOwner();
-    error NotPendingOwner();
+import {IOwnable2Steps} from "../../interfaces/IOwnable2Steps.sol";
 
+abstract contract Ownable2Steps is IOwnable2Steps {
     address internal owner;
     address internal pendingOwner;
 

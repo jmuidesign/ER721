@@ -1,39 +1,26 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity 0.8.29;
 
-import "../helpers/CommonErrors.sol";
-import "../interfaces/IERC721.sol";
-import "../interfaces/IERC165.sol";
-import "../interfaces/IERC721Metadata.sol";
-import "../interfaces/IERC721Enumerable.sol";
-import "../interfaces/IERC721TokenReceiver.sol";
+import {ICommonErrors} from "../interfaces/ICommonErrors.sol";
+import {IERC721} from "../interfaces/IERC721.sol";
+import {IERC165} from "../interfaces/IERC165.sol";
+import {IERC721Metadata} from "../interfaces/IERC721Metadata.sol";
+import {IERC721Enumerable} from "../interfaces/IERC721Enumerable.sol";
+import {IERC721TokenReceiver} from "../interfaces/IERC721TokenReceiver.sol";
 import {Crowdsale} from "./utils/Crowdsale.sol";
 import {Ownable2Steps} from "./utils/Ownable2Steps.sol";
-import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {Strings} from "openzeppelin-contracts/contracts/utils/Strings.sol";
-import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
-contract ERC721 is IERC721, IERC165, IERC721Metadata, IERC721Enumerable, Ownable2Steps, Crowdsale {
-    error NotOwnerApprovedOrOperator();
-    error NotOwnerOrOperator();
-    error NotTokenOwner();
-    error NotExist();
-    error AlreadyExist();
-    error NotERC721TokenReceiver();
-    error IndexOutOfBounds();
-    error MaxTotalSupplyReached();
-    error RevealTimeNotReached();
-    error InvalidIpfsCid();
-
+contract ERC721 is IERC721, IERC165, IERC721Metadata, IERC721Enumerable, ICommonErrors, Ownable2Steps, Crowdsale {
     using Strings for uint256;
-    using SafeERC20 for IERC20;
+
+    uint256 private immutable maxTotalSupply;
+    uint256 private immutable revealTime;
+    bytes32 private immutable ipfsCidCommit;
 
     string private tokenName;
     string private tokenSymbol;
-    bytes32 private ipfsCidCommit;
     string private ipfsCid;
-    uint256 private maxTotalSupply;
-    uint256 private revealTime;
     uint256 private tokensCount;
 
     mapping(uint256 id => address owner) private owners;
@@ -64,7 +51,9 @@ contract ERC721 is IERC721, IERC165, IERC721Metadata, IERC721Enumerable, Ownable
         uint256 _revealTime,
         uint256 _withdrawGracePeriod,
         bytes32 _ipfsCidCommit
-    ) Ownable2Steps(msg.sender) Crowdsale(_minimumPrice, _withdrawGracePeriod) {
+    ) Ownable2Steps(msg.sender) Crowdsale(_minimumPrice, _revealTime, _withdrawGracePeriod) {
+        if (_revealTime < block.timestamp) revert InvalidRevealTime();
+
         tokenName = _tokenName;
         tokenSymbol = _tokenSymbol;
         maxTotalSupply = _maxTotalSupply;
@@ -72,7 +61,9 @@ contract ERC721 is IERC721, IERC165, IERC721Metadata, IERC721Enumerable, Ownable
         ipfsCidCommit = _ipfsCidCommit;
     }
 
+    ///////////////////////////////////
     // Reveal IPFS CID
+    ///////////////////////////////////
     function revealIpfsCid(string memory _ipfsCid) external onlyOwner {
         if (block.timestamp < revealTime) revert RevealTimeNotReached();
         if (ipfsCidCommit != keccak256(abi.encodePacked(_ipfsCid))) revert InvalidIpfsCid();
@@ -80,28 +71,29 @@ contract ERC721 is IERC721, IERC165, IERC721Metadata, IERC721Enumerable, Ownable
         ipfsCid = _ipfsCid;
     }
 
+    ///////////////////////////////////
     // Crowdsale
+    ///////////////////////////////////
     function buyToken(address to) external payable {
         _buyToken(to, msg.value);
         _mint(to);
     }
 
-    function launchWithdraw(uint256 amount) external onlyOwner {
-        _launchWithdraw(amount, revealTime);
+    function withdraw(address to, uint256 amount) external onlyOwner {
+        _withdraw(to, amount);
     }
 
-    function executeWithdraw(address to) external onlyOwner {
-        _executeWithdraw(to);
-    }
-
+    ///////////////////////////////////
     // IERC165
+    ///////////////////////////////////
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IERC165).interfaceId || interfaceId == type(IERC721).interfaceId
-            || interfaceId == type(IERC721Metadata).interfaceId || interfaceId == type(IERC721Enumerable).interfaceId
-            || interfaceId == type(IERC721TokenReceiver).interfaceId;
+            || interfaceId == type(IERC721Metadata).interfaceId || interfaceId == type(IERC721Enumerable).interfaceId;
     }
 
+    ///////////////////////////////////
     // IERC721Metadata
+    ///////////////////////////////////
     function name() external view returns (string memory _name) {
         return tokenName;
     }
@@ -116,13 +108,15 @@ contract ERC721 is IERC721, IERC165, IERC721Metadata, IERC721Enumerable, Ownable
         return string(abi.encodePacked("ipfs://", ipfsCid, "/", tokenId.toString(), ".json"));
     }
 
+    ///////////////////////////////////
     // IERC721Enumerable
+    ///////////////////////////////////
     function totalSupply() external view returns (uint256) {
         return tokensCount;
     }
 
     function tokenByIndex(uint256 index) external view returns (uint256) {
-        if (index >= tokensCount) revert IndexOutOfBounds();
+        if (index >= tokensCount) revert NotExist();
 
         return index;
     }
@@ -132,12 +126,14 @@ contract ERC721 is IERC721, IERC165, IERC721Metadata, IERC721Enumerable, Ownable
 
         uint256[] memory tokenIds = ownerToTokenIds[owner];
 
-        if (index >= tokenIds.length) revert IndexOutOfBounds();
+        if (index >= tokenIds.length) revert NotExist();
 
         return tokenIds[index];
     }
 
+    ///////////////////////////////////
     // IERC721
+    ///////////////////////////////////
     function balanceOf(address owner) external view returns (uint256) {
         if (owner == address(0)) revert AddressZero();
 
@@ -196,7 +192,9 @@ contract ERC721 is IERC721, IERC165, IERC721Metadata, IERC721Enumerable, Ownable
         return operators[owner][operator];
     }
 
+    ///////////////////////////////////
     // Minting
+    ///////////////////////////////////
     function _mint(address to) private {
         if (tokensCount == maxTotalSupply) revert MaxTotalSupplyReached();
 
